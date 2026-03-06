@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "publicador"
+version = "1.0.0"
+description = "publicador de contenido desde word de EDM a una web en wordpress"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Brian Malavenda", email = "brian.malavenda@gmail.com"}
+]
+
+dependencies = [
+    "flask>=2.3.0",
+    "flask-cors>=4.0.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "cryptography>=3.4.0",
+    "python-docx>=1.1.0",
+    "pydub>=0.25.0",
+    "pika>=1.3.2",
+    "gunicorn>=20.0.0",
+    "python-jose==3.3.0",
+    "passlib==1.7.4",
+    "soundfile==0.12.1",
+    "python-telegram-bot==20.3" # lo dejamos porque capaz esto se puede extender a publicar en telegram
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+]
+
+[project.scripts]
+api = "publicador.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+
+[tool.hatch.build.targets.wheel]
+packages = ["publicador"]
