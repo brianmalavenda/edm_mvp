@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+import base64
 from docx import Document
 from docx.oxml.ns import qn
 from html import escape as html_escape
@@ -38,14 +39,27 @@ class WordToWordPress:
         re.IGNORECASE,
     )
 
+    # constructor de esta clase, recibe la url del wordpress, el usuario y la contraseña de aplicación
     def __init__(self, wp_url, username, app_password):
         self.wp_url = wp_url.rstrip('/')
-        self.auth = (username, app_password)
-        self.headers = {'Content-Type': 'application/json'}
+        credentials = f"{username}:{app_password}"
+        credentials_encoded = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
+
+        self.headers = {
+            'Content-Type': 'application/json',
+            # 'Authorization': f'Basic {credentials_encoded}',
+        }
         # Cache en memoria para no repetir llamadas si varias notas comparten
         # categoría/etiqueta dentro de la misma corrida
         self._category_cache = {}
         self._tag_cache = {}
+
+        self.session = requests.Session()
+        self.auth = (username, app_password)
+        self.session.auth = self.auth
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) EDM-Publicador/1.0',
+        })
 
     # ------------------------------------------------------------------
     # Parseo del .docx
@@ -133,15 +147,17 @@ class WordToWordPress:
                     current_note['metadatos']['tags'] = [
                         t.strip() for t in meta_match.group('tags').split(',') if t.strip()
                     ]
-                current_section = 'titulo'  # siguiente sección esperada    
-                continue
+                    current_section = 'titulo'  # siguiente sección esperada
+                    continue
+                else:
+                    print(f'⚠️ No se detectó metadata en el párrafo: "{text}"')
+                    current_section = 'titulo'
 
             # Cambio de sección por estilo reconocido
             # print(f'current_section: {current_section}, style_key: {style_key}, text: {text}')
 
             if style_key in self.STYLE_MAP:
                 current_style = self.STYLE_MAP[style_key]
-                print(f'current_section: {current_section}, current_style: {current_style}, text: {text}')
 
                 if current_section == 'titulo' and current_style == 'titulo':
                     current_note['titulo'] = text
@@ -180,35 +196,53 @@ class WordToWordPress:
     # ------------------------------------------------------------------
     # WordPress REST API
     # ------------------------------------------------------------------
-
     def _get_or_create_term(self, name, taxonomy):
         """taxonomy: 'categories' o 'tags'. Reusa el término si ya existe,
         lo crea si no."""
         name = (name or '').strip()
         if not name:
             return None
-
+ 
         cache = self._category_cache if taxonomy == 'categories' else self._tag_cache
         key = name.lower()
         if key in cache:
             return cache[key]
-
+ 
         base_url = f'{self.wp_url}/wp-json/wp/v2/{taxonomy}'
-
-        resp = requests.get(base_url, params={'search': name}, auth=self.auth)
+ 
+        # 1) Buscar si ya existe
+        resp = self.session.get(base_url, params={'search': name})
         if resp.status_code == 200:
             for item in resp.json():
                 if item['name'].strip().lower() == key:
                     cache[key] = item['id']
                     return item['id']
-
-        resp = requests.post(base_url, json={'name': name}, auth=self.auth, headers=self.headers)
+        else:
+            self._debug_error(f'Búsqueda de "{name}" en {taxonomy} falló', resp)
+ 
+        # 2) No existía (o no lo encontramos): crearlo
+        resp = self.session.post(
+            base_url,
+            json={'name': name, 'slug': name.lower(), 'description': ''},
+        )
+ 
         if resp.status_code == 201:
             term_id = resp.json()['id']
             cache[key] = term_id
             return term_id
-
-        print(f'⚠️ No se pudo crear/obtener "{name}" en {taxonomy}: {resp.text}')
+ 
+        # 3) Condición de carrera / búsqueda anterior falló pero el término
+        # ya existía: WordPress devuelve el term_id directo en el error
+        if resp.status_code == 400 and 'term_exists' in resp.text:
+            try:
+                term_id = resp.json().get('data', {}).get('term_id')
+            except ValueError:
+                term_id = None
+            if term_id:
+                cache[key] = term_id
+                return term_id
+ 
+        self._debug_error(f'No se pudo crear/obtener "{name}" en {taxonomy}', resp)
         return None
 
     def upload_image(self, image_data, filename, content_type):
@@ -218,7 +252,7 @@ class WordToWordPress:
             'Content-Type': content_type,
             'Content-Disposition': f'attachment; filename="{filename}"',
         }
-        resp = requests.post(url, headers=headers, auth=self.auth, data=image_data)
+        resp = self.session.post(url, headers=headers, data=image_data)
         if resp.status_code == 201:
             data = resp.json()
             return data['id'], data.get('source_url')
@@ -228,13 +262,13 @@ class WordToWordPress:
     def create_post(self, note, status='publish'):
         """Crea el post en WordPress para una nota ya parseada."""
         category_ids = []
-        if note['categoria']:
-            cat_id = self._get_or_create_term(note['categoria'], 'categories')
+        if note['metadatos']['categoria']:
+            cat_id = self._get_or_create_term(note['metadatos']['categoria'], 'categories')
             if cat_id:
                 category_ids.append(cat_id)
 
         tag_ids = []
-        for tag_name in note['tags']:
+        for tag_name in note['metadatos']['tags']:
             tag_id = self._get_or_create_term(tag_name, 'tags')
             if tag_id:
                 tag_ids.append(tag_id)
@@ -249,11 +283,14 @@ class WordToWordPress:
 
         post_data = {
             'title': note['titulo'] or '(Sin título)',
-            'content': self._build_content_html(note),
             'excerpt': note['copete'],
             'status': status,
-            'meta': {'volanta': note['volanta']},
+            'content': self._build_content_html(note),
+            'meta': {
+                'volanta': note['volanta'] or ''
+            }
         }
+
         if featured_media_id:
             post_data['featured_media'] = featured_media_id
         if category_ids:
@@ -262,8 +299,8 @@ class WordToWordPress:
             post_data['tags'] = tag_ids
 
         url = f'{self.wp_url}/wp-json/wp/v2/posts'
-        resp = requests.post(url, json=post_data, auth=self.auth, headers=self.headers)
-
+        resp = self.session.post(url, json=post_data, headers=self.headers)
+        print(f'Respuesta: {resp.status_code} - {resp.text}')
         if resp.status_code == 201:
             data = resp.json()
             print(f'✅ Post creado: {data["link"]}')
