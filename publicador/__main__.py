@@ -11,7 +11,7 @@ def main():
     wp = WordToWordPress(WP_URL, WP_USER, WP_APP_PASSWORD)
     
     # Procesar un archivo
-    wp.process_file('nota_001.docx')
+    wp.process_file('prueba_01.docx')
 
 if __name__ == '__main__':
     main()
