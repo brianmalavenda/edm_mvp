@@ -14,16 +14,9 @@ def create_app():
     app.config['WP_USER'] = os.getenv('WP_USER', 'tu_usuario')
     app.config['WP_APP_PASSWORD'] = os.getenv('WP_APP_PASSWORD', 'xxxx xxxx xxxx xxxx')
 
-    # Registrar blueprints de rutas
+    # Registrar blueprints de rutas.
     from .routes import main_bp
     app.register_blueprint(main_bp)
 
-    # Registrar blueprint de Telegram
-    # from .services import telegram_bp
-    # app.register_blueprint(telegram_bp)
-
     return app
-
-# Para backwards compatibility (si alguien hace "from api_backend import app")
-# app = create_app()
     

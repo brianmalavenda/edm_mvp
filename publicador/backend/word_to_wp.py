@@ -5,6 +5,7 @@ import base64
 from docx import Document
 from docx.oxml.ns import qn
 from html import escape as html_escape
+from models import TermCache
 
 
 class WordToWordPress:
@@ -203,10 +204,9 @@ class WordToWordPress:
         if not name:
             return None
  
-        cache = self._category_cache if taxonomy == 'categories' else self._tag_cache
-        key = name.lower()
-        if key in cache:
-            return cache[key]
+        cached = db_session.query(TermCache).filter_by(name=name.lower(), taxonomy=taxonomy).first()
+        if cached:
+            return cached.wp_term_id
  
         base_url = f'{self.wp_url}/wp-json/wp/v2/{taxonomy}'
  
@@ -238,9 +238,13 @@ class WordToWordPress:
                 term_id = resp.json().get('data', {}).get('term_id')
             except ValueError:
                 term_id = None
+            # if term_id:
+            #     cache[key] = term_id
+            #     return term_id
             if term_id:
-                cache[key] = term_id
-                return term_id
+                db_session.add(TermCache(name=name.lower(), taxonomy=taxonomy, wp_term_id=term_id))
+                db_session.commit()
+            return term_id
  
         self._debug_error(f'No se pudo crear/obtener "{name}" en {taxonomy}', resp)
         return None

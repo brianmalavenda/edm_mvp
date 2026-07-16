@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "publicador"
+name = "backend"
 version = "1.0.0"
-description = "publicador de contenido desde word de EDM a una web en wordpress"
+description = "backend del publicador de contenido desde word de EDM a una web en wordpress"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-api = "publicador.__main__:main"
+api = "backend.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -49,4 +49,4 @@ pythonpath = ["."]
 addopts = "-v --tb=short"
 
 [tool.hatch.build.targets.wheel]
-packages = ["publicador"]
+packages = ["backend"]
