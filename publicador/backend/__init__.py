@@ -7,7 +7,7 @@ def create_app():
     app = Flask(__name__)
     
     # Configuración
-    ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost']
+    ALLOWED_ORIGINS = ['http://localhost:5000', 'http://localhost']
     CORS(app, origins=ALLOWED_ORIGINS)
     
     app.config['WP_URL'] = os.getenv('WP_URL', 'https://tudominio.com')

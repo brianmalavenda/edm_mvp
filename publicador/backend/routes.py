@@ -90,3 +90,39 @@ def retry_note(note_id):
     from .tasks import queue_retry_note
     queue_retry_note(note_id)
     return jsonify({'status': 'requeued'})
+
+
+@main_bp.post('/preview')
+def preview_docx():
+    """Parsea el docx SIN publicar ni persistir nada. Solo para que el
+    frontend muestre qué se va a publicar antes de confirmarlo."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'falta el archivo'}), 400
+
+    file = request.files['file']
+    filename = secure_filename(file.filename)
+    if not filename.endswith('.docx'):
+        return jsonify({'error': 'sólo se aceptan .docx'}), 400
+
+    tmp_path = os.path.join('/tmp', filename)
+    file.save(tmp_path)
+
+    try:
+        wp = WordToWordPress(
+            current_app.config['WP_URL'],
+            current_app.config['WP_USER'],
+            current_app.config['WP_APP_PASSWORD'],
+        )
+        notes = wp.extract_notes(tmp_path)
+    finally:
+        os.remove(tmp_path)
+
+    return jsonify({
+        'notes': [{
+            'indice': i,
+            'titulo': n['titulo'] or '(sin título)',
+            'tiene_volanta': bool(n['volanta']),
+            'tiene_copete': bool(n['copete']),
+            'tiene_imagen': n['imagen'] is not None,
+        } for i, n in enumerate(notes, 1)]
+    })

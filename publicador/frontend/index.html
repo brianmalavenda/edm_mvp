@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EDM — Publicador de notas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page">
+  <header class="studio__header">
+    <div class="studio__brand">
+      <img src="ejes_publicador.png" alt="Logo Ejes Audio" style="width: 120px; height: 120px; margin-right: 15px;"> 
+      <span class="studio__dot"></span>
+      <h1>EDM - Publicador de notas</h1>
+    </div>
+    <p class="studio__subtitle">DOCX → Wordpress</p>
+  </header>
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>01 CARGAR EL ARCHIVO DE NOTAS</div>
+
+    <div class="dropzone" id="dropzone">
+      <p class="main">Arrastrá tu DOCX acá</p>
+      <p class="or">o</p>
+      <button class="btn-choose" id="btnChoose" type="button">Elegir archivo</button>
+      <p class="hint">Máximo 15 MB · .docx</p>
+    </div>
+
+    <div class="file-loaded" id="fileLoaded">
+      <span class="name" id="fileName"></span>
+      <button id="btnQuitar" type="button">Quitar</button>
+    </div>
+
+    <input type="file" id="fileInput" accept=".docx" hidden>
+  </div>
+
+  <div class="actions" id="actions">
+    <button class="btn btn-secondary" id="btnPreview" type="button">Previsualizar notas</button>
+    <button class="btn btn-primary" id="btnPublicar" type="button">Publicar</button>
+  </div>
+
+  <div class="panel preview-panel" id="previewPanel">
+    <div class="panel-label"><span class="dot"></span>02 NOTAS</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Título</th>
+          <th>Volanta</th>
+          <th>Copete</th>
+          <th>Imagen</th>
+          <th>Publicar</th>
+        </tr>
+      </thead>
+      <tbody id="previewBody"></tbody>
+    </table>
+    <div class="status-line" id="previewStatus"></div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <div class="panel-label"><span class="dot"></span>03 RESULTADO DE LA PUBLICACIÓN</div>
+    <div id="resultsBody"></div>
+  </div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

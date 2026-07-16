@@ -50,11 +50,11 @@ RUN mkdir -p /data/uploads && chown -R publicador:publicador /data/uploads /app
 ENV PYTHONUNBUFFERED=1 \
     UPLOAD_DIR=/data/uploads \
     FLASK_ENV=production \
-    PORT=5000
+    PORT=8990
 
 USER publicador
 
-EXPOSE 5000
+EXPOSE 8990
 
 # Requiere una ruta GET /api/health en routes.py que devuelva 200 OK.
 # Si todavía no la agregaste, hacelo antes de depender de este healthcheck.
