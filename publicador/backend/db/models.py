@@ -1,6 +1,5 @@
 from datetime import datetime
-from sqlalchemy import (Column, Integer, String, Text, DateTime,
-                         ForeignKey, JSON, UniqueConstraint)
+from sqlalchemy import (Column, Integer, String, Text, DateTime, ForeignKey, JSON, UniqueConstraint)
 from sqlalchemy.orm import relationship, declarative_base
 
 Base = declarative_base()
@@ -18,6 +17,7 @@ class Document(Base):
     error_message = Column(Text, nullable=True)
 
     notes = relationship('Note', back_populates='document', cascade='all, delete-orphan')
+    # relationship con back_populates permite acceder a document.notes y note.document, y cascade borra las notas si se borra el documento.
 
 
 class Note(Base):
@@ -31,11 +31,12 @@ class Note(Base):
     titulo = Column(String(255))
     copete = Column(Text)
     cuerpo_parrafos = Column(JSON)  # lista de strings
+    # TODO: cambiar que en vez de guardar todo el cuerpo de la nota solo guardemos el texto de los dos primeros parrafos.
     categoria = Column(String(120))
     tags = Column(JSON)
 
     status = Column(String(20), default='pending')  # pending | publishing | published | failed
-    wp_post_id = Column(Integer, nullable=True)
+    wp_post_id = Column(Integer, nullable=True) # para mantener la relacion con el post de WordPress, si ya se publicó. Se puede usar para actualizar el post en WP si se re-publica la misma nota.
     wp_link = Column(String(500), nullable=True)
     error_message = Column(Text, nullable=True)
 

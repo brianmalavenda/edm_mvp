@@ -45,17 +45,23 @@ def publicar(docx_path):
         print('❌ Faltan variables de entorno. Revisá tu archivo .env')
         return
 
-    wp = WordToWordPress(WP_URL, WP_USER, WP_APP_PASSWORD)
-    resultados = wp.process_file(docx_path, status='publish')
+    resultados = process_file(docx_path, status='publish')
 
     print('\n📊 Resumen:')
     for r in resultados:
         estado = '✅' if r.get('ok') else '❌'
-        print(f'  {estado} Nota {r.get("nota_index")}: {r.get("titulo", "")} '
-              f'{"-> " + r["link"] if r.get("ok") else "-> " + str(r.get("error"))}')
+        print(f'  {estado} Nota: {r.get("titulo", "")} - Link: {r["link"] if r.get("ok") else "Error -> " + str(r.get("error"))}')
+
+def process_file(docx_path, status='publish'):
+    wp = WordToWordPress(WP_URL, WP_USER, WP_APP_PASSWORD)
+    notes = wp.extract_notes(docx_path)
+    for result in wp.publish_notes(notes, status=status):
+        print(f'Nota: {result["titulo"]} -> {"Estado: " + ("✅" if result['status'] == 'published' else "❌")}')
 
 
 if __name__ == '__main__':
+    """PRUEBAS: Permite correr el parser y publicar notas sin levantar el servidor Flask."""
+
     if len(sys.argv) != 3 or sys.argv[1] not in ('preview', 'publicar'):
         print(__doc__)
         sys.exit(1)

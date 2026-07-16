@@ -5,8 +5,8 @@ import base64
 from docx import Document
 from docx.oxml.ns import qn
 from html import escape as html_escape
-from models import TermCache
 
+DEFAULT_TIMEOUT = (5, 30)  # (connect_timeout, read_timeout) en segundos
 
 class WordToWordPress:
     """
@@ -41,7 +41,7 @@ class WordToWordPress:
     )
 
     # constructor de esta clase, recibe la url del wordpress, el usuario y la contraseña de aplicación
-    def __init__(self, wp_url, username, app_password):
+    def __init__(self, wp_url, username, app_password, term_cache_get=None, term_cache_set=None):
         self.wp_url = wp_url.rstrip('/')
         credentials = f"{username}:{app_password}"
         credentials_encoded = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
@@ -52,15 +52,25 @@ class WordToWordPress:
         }
         # Cache en memoria para no repetir llamadas si varias notas comparten
         # categoría/etiqueta dentro de la misma corrida
+        self._term_cache_get = term_cache_get or self._memory_cache_get
+        self._term_cache_set = term_cache_set or self._memory_cache_set
         self._category_cache = {}
         self._tag_cache = {}
-
+        
         self.session = requests.Session()
         self.auth = (username, app_password)
         self.session.auth = self.auth
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) EDM-Publicador/1.0',
         })
+
+    def _memory_cache_get(self, name, taxonomy):
+        cache = self._category_cache if taxonomy == 'categories' else self._tag_cache
+        return cache.get(name.lower())
+
+    def _memory_cache_set(self, name, taxonomy, term_id):
+        cache = self._category_cache if taxonomy == 'categories' else self._tag_cache
+        cache[name.lower()] = term_id
 
     # ------------------------------------------------------------------
     # Parseo del .docx
@@ -199,55 +209,56 @@ class WordToWordPress:
     # ------------------------------------------------------------------
     def _get_or_create_term(self, name, taxonomy):
         """taxonomy: 'categories' o 'tags'. Reusa el término si ya existe,
-        lo crea si no."""
+        lo crea si no. Persiste el mapeo en TermCache para compartirlo entre
+        workers/procesos."""
         name = (name or '').strip()
         if not name:
             return None
- 
-        cached = db_session.query(TermCache).filter_by(name=name.lower(), taxonomy=taxonomy).first()
-        if cached:
-            return cached.wp_term_id
- 
-        base_url = f'{self.wp_url}/wp-json/wp/v2/{taxonomy}'
- 
-        # 1) Buscar si ya existe
-        resp = self.session.get(base_url, params={'search': name})
-        if resp.status_code == 200:
-            for item in resp.json():
-                if item['name'].strip().lower() == key:
-                    cache[key] = item['id']
-                    return item['id']
-        else:
-            self._debug_error(f'Búsqueda de "{name}" en {taxonomy} falló', resp)
- 
-        # 2) No existía (o no lo encontramos): crearlo
-        resp = self.session.post(
-            base_url,
-            json={'name': name, 'slug': name.lower(), 'description': ''},
-        )
- 
-        if resp.status_code == 201:
-            term_id = resp.json()['id']
-            cache[key] = term_id
-            return term_id
- 
-        # 3) Condición de carrera / búsqueda anterior falló pero el término
-        # ya existía: WordPress devuelve el term_id directo en el error
-        if resp.status_code == 400 and 'term_exists' in resp.text:
-            try:
-                term_id = resp.json().get('data', {}).get('term_id')
-            except ValueError:
-                term_id = None
-            # if term_id:
-            #     cache[key] = term_id
-            #     return term_id
-            if term_id:
-                db_session.add(TermCache(name=name.lower(), taxonomy=taxonomy, wp_term_id=term_id))
-                db_session.commit()
-            return term_id
- 
-        self._debug_error(f'No se pudo crear/obtener "{name}" en {taxonomy}', resp)
-        return None
+
+        try:
+            cached_id = self._term_cache_get(name, taxonomy)
+            if cached_id:
+                return cached_id
+
+            base_url = f'{self.wp_url}/wp-json/wp/v2/{taxonomy}'
+
+            resp = self.session.get(base_url, params={'search': name}, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code == 200:
+                for item in resp.json():
+                    if item['name'].strip().lower() == normalized_name:
+                        term_id = item['id']
+                        self._term_cache_set(name, taxonomy, term_id)
+                        return term_id
+            else:
+                print(f'⚠️ Búsqueda de "{name}" en {taxonomy} falló: {resp.status_code} {resp.text}')
+
+            # 2) No existía: crearlo
+            resp = self.session.post(
+                base_url,
+                json={'name': name, 'slug': normalized_name, 'description': ''},
+                timeout=DEFAULT_TIMEOUT
+            )
+
+            if resp.status_code == 201:
+                term_id = resp.json()['id']
+                self._term_cache_set(name, taxonomy, term_id)
+                return term_id
+
+            # 3) Condición de carrera: ya existía
+            if resp.status_code == 400 and 'term_exists' in resp.text:
+                try:
+                    term_id = resp.json().get('data', {}).get('term_id')
+                except ValueError:
+                    term_id = None
+                if term_id:
+                    self._term_cache_set(name, taxonomy, term_id)
+                return term_id
+
+            print(f'⚠️ No se pudo crear/obtener "{name}" en {taxonomy}: {resp.status_code} {resp.text}')
+            return None
+        except Exception as e:
+            print(f'⚠️ Excepción al obtener/crear "{name}" en {taxonomy}: {e}')
+            return None
 
     def upload_image(self, image_data, filename, content_type):
         """Sube una imagen a la Media Library y devuelve (id, url)."""
@@ -256,7 +267,7 @@ class WordToWordPress:
             'Content-Type': content_type,
             'Content-Disposition': f'attachment; filename="{filename}"',
         }
-        resp = self.session.post(url, headers=headers, data=image_data)
+        resp = self.session.post(url, headers=headers, data=image_data, timeout=DEFAULT_TIMEOUT)
         if resp.status_code == 201:
             data = resp.json()
             return data['id'], data.get('source_url')
@@ -303,7 +314,7 @@ class WordToWordPress:
             post_data['tags'] = tag_ids
 
         url = f'{self.wp_url}/wp-json/wp/v2/posts'
-        resp = self.session.post(url, json=post_data, headers=self.headers)
+        resp = self.session.post(url, json=post_data, headers=self.headers, timeout=DEFAULT_TIMEOUT)
         print(f'Respuesta: {resp.status_code} - {resp.text}')
         if resp.status_code == 201:
             data = resp.json()
@@ -313,9 +324,19 @@ class WordToWordPress:
         print(f'❌ Error creando post "{note["titulo"]}": {resp.text}')
         return {'ok': False, 'error': resp.text}
 
-    # ------------------------------------------------------------------
-    # Orquestación
-    # ------------------------------------------------------------------
+    def publish_notes(self, notes, status='publish'):
+        """Generador: yield-ea el resultado de cada nota a medida que se publica, orquesta extract/create_post."""
+
+        for i, note in enumerate(notes, 1):
+            if not note['titulo']:
+                yield {'ok': False, 'error': 'sin título', 'nota_index': i, 'note_data': note}
+                continue
+            result = self.create_post(note, status=status)
+            result['nota_index'] = i
+            result['titulo'] = note['titulo']
+            result['note_data'] = note
+            result['status'] = 'published' if result.get('ok') else 'failed'
+            yield result
 
     def process_file(self, docx_path, status='publish'):
         """Parsea el .docx completo y publica todas las notas detectadas.

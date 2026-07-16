@@ -2,8 +2,10 @@ import hashlib
 import os
 from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
-from .db import SessionLocal
-from .models import Document, Note
+from .db.db import SessionLocal
+from .db.models import Document, Note # hago referencia a la carpeta db.models para poder usar Document y Note en las rutas, y que SQLAlchemy pueda mapearlos a la base de datos.
+# NOTA: SQLAlchemy es un ORM, y para que funcione correctamente, las clases de modelo (Document y Note) deben estar definidas en el mismo contexto que la sesión de la base de 
+# datos.
 from .tasks import queue_process_document
 
 main_bp = Blueprint('main', __name__, url_prefix='/api')
@@ -35,8 +37,8 @@ def upload_docx():
         f.write(file_bytes)
 
     doc = Document(filename=filename, file_hash=file_hash, status='pending')
-    db.add(doc)
-    db.commit()
+    db.add(doc) # esto genera un INSERT en la tabla documents y asigna un id autoincremental a doc.id
+    db.commit() # el commit es necesario para que se guarde en la base de datos y se genere el id, antes de encolar el job.
 
     queue_process_document(doc.id, filepath)  # encola el job async, no bloquea el request
 

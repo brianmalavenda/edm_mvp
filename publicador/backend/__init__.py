@@ -14,6 +14,11 @@ def create_app():
     app.config['WP_USER'] = os.getenv('WP_USER', 'tu_usuario')
     app.config['WP_APP_PASSWORD'] = os.getenv('WP_APP_PASSWORD', 'xxxx xxxx xxxx xxxx')
 
+    # Inicializacion de la base de datos y creación de sesiones por request. Cada sesion se cierra automáticamente al final del request.
+    from .db import init_db, init_app
+    init_db()
+    init_app(app)
+
     # Registrar blueprints de rutas.
     from .routes import main_bp
     app.register_blueprint(main_bp)
